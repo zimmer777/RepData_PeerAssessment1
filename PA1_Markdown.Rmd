@@ -1,0 +1,139 @@
+---
+title: "RepData_PA1"
+author: "Dr.Zed"
+date: "Saturday, November 15, 2014"
+output: html_document
+---
+
+## Loading and preprocessing the data
+
+These data are provided as CSV format, with each row being an observation of the number of steps taken in a 5 minute interval.  The number of steps, day and interval number are the vairbales recorded.  NA values, which represent missing data, are left in and will be treated later.
+
+```{r}
+activity<-read.csv('activity.csv')
+```
+
+We now have a set of 17568 observations of 3 varibles stored in activity.
+
+
+## What is mean total number of steps taken per day?
+
+Next up, find the total number of steps per day.  This is a job for DDPLY.  ddply() is used to summarize the data set and calcuate the total number of steps per day.  NA's are excluded, so that they could as zero steps in that interval.
+
+
+```{r}
+library(plyr)
+
+sum_activity<-ddply(activity,"date",summarize,sumsteps=sum(steps,na.rm=TRUE))
+
+
+hist(sum_activity$sumsteps,breaks=10,xlab="Total Steps per Day",main="Histogram of Total Steps per Day")
+
+Mean_Number_of_Steps<-mean(sum_activity$sumsteps)
+Meadian_Number_of_Steps<-median(sum_activity$sumsteps)
+
+```
+
+The mean number of steps per day was: `r mean(sum_activity$sumsteps)`
+and the median was: `r median(sum_activity$sumsteps)`.
+(using inline evaluation)
+
+
+## What is the average daily activity pattern?
+
+To assess the daily activity pattern, we need to summarize data by average steps in each 5 minute interval.  
+
+```{r}
+
+daily_pattern<-ddply(activity,"interval",summarize,interval_mean=mean(steps,na.rm=TRUE))
+
+plot(daily_pattern$interval_mean,type="l",xlab="5 Minute Interval #",ylab="Mean Steps per 5 minutes",main="Mean Number of Steps per 5 Minute Interval Averaged Over All Days")
+
+Max_Interval<-which.max(daily_pattern$interval_mean)
+
+```
+
+The maximum in the average values occurs at interval # `r which.max(daily_pattern$interval_mean)` which is minute # `r 5*which.max(daily_pattern$interval_mean)`.  (using inline evaluation)
+
+
+## Inputing missing values
+
+There are some NA values representing intervals with missing data.  How many are there? (evaluated inline below)
+
+Total number of NA's: `r sum(is.na(activity$steps))`.
+
+Dealing with missing values is always dangerous, because one is forced to inference based on incomplete knowledge.  But we are bold and will use the median number of steps in the interval as the replacement value.  Why median?  It is the most likely actual value to have occurred.  Not everyone will choose this method, but by declaring it here, at least you can see and reproduce the analysis, even if you don't like it.
+
+Start by calculating the median, then replace any NA's with the median value for its interval. 
+
+And yes, I am using a for-loop - I know there is probably a better vectorized way to do this, but I dont have time to work it out.
+
+```{r}
+daily_median<-ddply(activity,"interval",summarize,interval_median=median(steps,na.rm=TRUE))
+
+number_of_NAs<-sum(is.na(activity$steps))
+
+medvals=NULL
+
+NA_intervals=activity$interval[is.na(activity$steps)]
+
+for (i in 1:number_of_NAs)
+  {
+    medvals[i]=daily_median$interval_median[daily_median$interval==NA_intervals[i]]
+  
+  
+  }
+
+activity$steps[is.na(activity$steps)]=medvals
+
+```
+
+OK -- now all the missing values are replaced with the median of their respective interval.  Because I have replaced values with something other than the mean, it should bias the histograms.  Let's see if that is the case.
+
+```{r}
+sum_activity_replacedNA<-ddply(activity,"date",summarize,sumsteps=sum(steps))
+
+
+hist(sum_activity_replacedNA$sumsteps,breaks=10,xlab="Total Steps per Day",main="Histogram of Total Steps per Day, NA replaced with interval median")
+
+Mean_Number_of_Steps<-mean(sum_activity_replacedNA$sumsteps)
+Meadian_Number_of_Steps<-median(sum_activity_replacedNA$sumsteps)
+
+
+```
+
+The new mean number of steps per day, after NAs replaced, was: `r mean(sum_activity_replacedNA$sumsteps)`
+and the median was: `r median(sum_activity_replacedNA$sumsteps)`.
+(using inline evaluation)
+
+The histogram doesn't change in appearance, so the changes must be pretty subtle. THe median value also doesn't change, but the mean does increase a bit from `r mean(sum_activity$sumsteps)` to `r mean(sum_activity_replacedNA$sumsteps)`
+
+## Are there differences in activity patterns between weekdays and weekends?
+
+Now we need to break up the data set between weekday and weekend.  We accomplish this by creating a new factor for each day showing day of week using the weekdays() function.
+
+```{r}
+activity$dow<-factor(weekdays(as.Date(activity$date)))
+daily_pattern_weekday<-ddply(activity[activity$dow %in% c("Monday","Tuesday","Wednesday","Thursday","Friday"),],c("interval"),summarize,interval_mean=mean(steps,na.rm=TRUE))
+daily_pattern_weekend<-ddply(activity[activity$dow %in% c("Saturday","Sunday"),],c("interval"),summarize,interval_mean=mean(steps,na.rm=TRUE))
+
+
+```
+
+And now we make a panel plot of the two sets to look at the difference in time of week. Panel plot is kinda lame here -- I'd rather overplot two time series, but the assignment says panels.  
+
+```{r}
+par(mfrow=c(2,1), mar=rep(0,4), oma = c(4,4,4,4))
+plot(daily_pattern_weekday$interval_mean,type="l", axes = FALSE,ylim=c(0,250),pin=c(4,4))
+box(); axis(1); axis(2); axis(4,labels=FALSE);
+mtext("Average Steps per 5 Minute Interval for Weekdays (upper) and Weekends (lower)", side = 3, line =2.5)
+mtext("Average Steps", side = 2, line =2.5)
+plot(daily_pattern_weekend$interval_mean,type="l",ylim=c(0,250),pin=c(4,4))
+mtext("Average Steps", side = 2, line =2.5)
+mtext("Interval", side = 1, line =2.5)
+
+
+```
+
+So yes, there are differences.  Weekdays show an earlier and larger activity spike in the morning and another smaller spike in the evening, while on the weekends activity is more evenly distributed about daytime hours.
+
